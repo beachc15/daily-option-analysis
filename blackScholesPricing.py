@@ -8,7 +8,7 @@ init_printing()
 
 
 def euro_vanilla(S, K, T, r, sigma, option_type='call'.lower()):
-    print(T)
+    #this way of handling negative T values needs to be fixed
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     d2 = (np.log(S / K) + (r - 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     if option_type == 'call':

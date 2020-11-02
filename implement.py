@@ -4,6 +4,7 @@ import json
 import datetime
 # import yfinance as yf
 from blackScholesPricing import euro_vanilla
+from tqdm import tqdm
 
 '''things which need to be gotten:
 
@@ -74,12 +75,13 @@ def main():
     # Date in which the data was recorded
     eval_date_str = '2020-06-26'
     options = ['call', 'put']
-    S = 150
+    S = 308
+    i = 0
     all = []
     # The daily price movement DataFrame of each of the 10 ETFs which are followed
     # TODO define the price list at the highest level
     price_list = get_price_list(eval_date_str)
-    for n in range(len(data)):
+    for n in tqdm(range(len(data))):
         time = data[n]['time']
         temp_data = data[n]['data']
         for ticker in data[n]['data'].keys():
@@ -90,12 +92,12 @@ def main():
                 expiration_date_obj = date_str_to_obj(expiration_date_str)
                 temp_data_by_ticker_and_date = temp_data_by_ticker[expiration_date_str]
                 for option in options:
+                    contracts = {}
                     # Iterate between 'call' and 'put' option type. This is iteration is useful both for looking through
                     # the json file as well as for the option pricing function.
                     temp_data_for_option_type = pd.read_json(temp_data_by_ticker_and_date[option])
                     for contract in range(len(temp_data_for_option_type.index)):
                         # Iterate by the individual contracts inside of each option type
-                        sigma = temp_data_for_option_type['impliedVolatility']
                         K = float('{}.{}'.format(temp_data_for_option_type['contractSymbol'][contract][-6:-3],
                                                  temp_data_for_option_type['contractSymbol'][contract][-2:]))
                         # TODO double check accuracy of K measurement
@@ -118,7 +120,7 @@ def main():
                         # average of the rates paid by investor by volume. and before we know more about prime debt
                         # markets, lets just go with treasury ten-years + 5
                         r = 0.002
-                        sigma = temp_data_for_option_type['impliedVolatility']
+                        sigma = temp_data_for_option_type['impliedVolatility'][contract]
 
                         # S
                         # get stock price at time that the stock was last traded
@@ -132,12 +134,22 @@ def main():
                         temp_price_series = price_list[f'(\'Adj Close\', \'{ticker}\')']
 
                         # S = df['Price']
+                        i += 1
+
                         x = euro_vanilla(S, K, T, r, sigma, option_type='call')
-                        all.append(x)
-    return all
+                        contracts[contract] = x
+
+                    contracts = pd.Series(contracts, name='blackScholesPrice')
+                    temp_data_for_option_type['blackScholesPrice'] = contracts
+                    break
+                break
+            break
+        break
+    return temp_data_for_option_type, i
 
 
 if __name__ == '__main__':
     start = datetime.datetime.now()
-    y = main()
+    y, iterations = main()
     end = datetime.datetime.now()
+    print(f'time was {end - start}')
