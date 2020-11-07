@@ -2,6 +2,7 @@ import pandas as pd
 import pyodbc
 from datetime import date, timedelta, datetime
 import yfinance as yf
+import numpy as np
 
 
 def get_current_price(datetime_, stock_ticker, connection):
@@ -41,7 +42,9 @@ def __lookup_connection(stock_ticker, sql_diff, datetime_, connection):
 
 
 def get_price_history(stock_ticker, current_datetime, timeframe, connection):
-	"""returns the historical stock data for the selected time period to do further analysis on including volatility, volume, price trends, etc"""
+	"""returns the historical stock data for the selected time period to do further analysis on including volatility,
+	volume, price trends, etc """
+
 	# needs to call two separate functions whether the timeframe is small (sql) or large (daily data from yfinance)
 	# TODO day trend seems hard to implement at this point but I want to add it. The difficulty comes from how do you
 	#  trend early morning results? will it be from the start of the day yesterday? should it be past 3 hours of
@@ -52,71 +55,96 @@ def get_price_history(stock_ticker, current_datetime, timeframe, connection):
 	# c) else:
 	#   - add whatever we can find from yfinance
 
-	# Determine time delta to pass into my SQL lookup function
-	if timeframe == '1d':
-		time_d = timedelta(days=1)
-	elif timeframe == '5d':
-		time_d = timedelta(days=5)
-	elif timeframe == '1mo':
-		# wont be the most consistent thing as i can't really find a months argument but oh well
-		time_d = timedelta(weeks=4)
-	elif timeframe == '3mo':
-		time_d = timedelta(weeks=4 * 3)
-	elif timeframe == '6mo':
-		time_d = timedelta(weeks=4 * 6)
-	elif timeframe == '1y':
-		time_d = timedelta(days=365)
-	elif timeframe == '2y':
-		time_d = timedelta(days=365 * 2)
-	elif timeframe == '5y':
-		time_d = timedelta(days=365 * 5)
-	else:
-		raise IndexError(f'Time frame \'{timeframe}\' not found in appropriate list. Please use one of the following options\n'
-		                 f'\t[\'1d\', \'5d\', \'1mo\', \'3mo\', \'6mo\', \'1y\', \'2y\', \'5y\']')  # if-else statements for timedelta lookup
+	# timeframes = ['']
+	def __histories(timeframe):
+		def get_volume_stats(df):
+			"""compute volume standard deviation"""
+			key = df.columns[-1]  # should be the "Volume" column
+			std = np.std(df[key])
+			return std
 
-	# Determine start date based on current_datetime - timedelta
-	print(current_datetime)
-	print(timedelta)
-	start_date = current_datetime - time_d
-	print('Start DT = ', start_date)
-	print('End DT = ', current_datetime)
+		def get_price_data(df):
+			"""compute log return, standard deviation of adj close
+			:returns standard deviation, Percent change"""
+			key = df.columns[0]  # should be the "Adj Close" column
+			std = np.std(df[key])
 
-	# TODO update stock ticker to accept the stringed tuple thats in the header row
-	def get_price_sql():
-		"""Select all for the datetime we are looking at.
-		we need to alternate which sql we look up for based on the time_d.
-		HARD CODED: cut off date for the start of daily price tracking"""
-		cutoff_dt = date(year=2020, month=6, day=26)
+			# Compute pct_change
+			start = df[key].head(1).values
+			end = df[key].tail(1).values
+			pct_change = np.log(end / start)
+			return std, pct_change
+
+		# ----------------
+		# DATE HANDLING
+		# Determine time delta to pass into my SQL lookup function
+		if timeframe == '1d':
+			time_d = timedelta(days=1)
+		elif timeframe == '5d':
+			time_d = timedelta(days=5)
+		elif timeframe == '1mo':
+			# wont be the most consistent thing as i can't really find a months argument but oh well
+			time_d = timedelta(weeks=4)
+		elif timeframe == '3mo':
+			time_d = timedelta(weeks=4 * 3)
+		elif timeframe == '6mo':
+			time_d = timedelta(weeks=4 * 6)
+		elif timeframe == '1y':
+			time_d = timedelta(days=365)
+		elif timeframe == '2y':
+			time_d = timedelta(days=365 * 2)
+		elif timeframe == '5y':
+			time_d = timedelta(days=365 * 5)
+		else:
+			raise IndexError(
+				f'Time frame \'{timeframe}\' not found in appropriate list. Please use one of the following options\n'
+				f'\t[\'1d\', \'5d\', \'1mo\', \'3mo\', \'6mo\', \'1y\', \'2y\', \'5y\']')  # if-else statements for timedelta lookup
+
+		# Determine start date based on current_datetime - timedelta
+		start_date = current_datetime - time_d
+		# if it's a saturday: round to friday. if it's a sunday: round to monday
+		if start_date.weekday() == 5:  # saturday
+			start_date = start_date - timedelta(days=1)
+		elif start_date.weekday() == 6:  # sunday
+			start_date = start_date + timedelta(days=1)
+
+		cutoff_dt = date(year=2020, month=6, day=26)  # This is the first date that is recorded w/ minute data
 		if cutoff_dt > start_date:
 			# do not run if the start date is less than the first day we have in the by-the-minute data
 			table = "schema_name2.historical_prices_by_day"
-			dt_name = "Date"
+			dt_name = "myDate"
 		else:
 			table = "schema_name2.all_prices_to_sql"
 			dt_name = "myDateTime"
-		curs = connection.cursor()
-		# stock_string_for_sql = f'[(\'{sql_diff}\', \'{str(stock_ticker).upper()}\')]'
-		sql = f"SELECT * from {table} where {dt_name} = '{start_date}'"
-		print(sql)
-		result = curs.execute(sql).fetchval()
-		curs.close()
-		return result
 
-	def get_price_yfinance():
-		"""Not used for the purpose of the EFT function lookups. Will be built out for the continuous deployment"""
-		# x = yf.Ticker(stock_ticker).history(period=timeframe, end=current_datetime)
-		x = 0
-		return x
-	x = get_price_sql()
-	# see if date is in database and if not, add it
+		# ------------------
+		# COLUMN NAME HANDLING
+		sql_header_list = ['Adj Close',
+		                   'Close',
+		                   'High',
+		                   'Low',
+		                   'Open',
+		                   'Volume']
+		# add in the ticker name for the sql lookup
+		adj_header_list = ['(\'' + c + '\', \'' + stock_ticker.upper() + '\')' for c in sql_header_list]
+		col_names = ('\"' + '\", \"'.join(adj_header_list) + '\"')
 
-	# if the datetime start that we are looking for is not in my repository then lookup from yfinance
-	# would this be a switch? I dont want to add 6 if else statements for the different timeframes?
-	# probably not...
-	return x
+		# -----------------
+		# ACTUAL CALL
+		sql_ = f"SELECT {dt_name}, {col_names} from" \
+		       f" {table} where {dt_name} > '{start_date}' AND {dt_name} < '{current_datetime}' "
+		result = pd.read_sql(sql=sql_, con=connection)
+		result = result.set_index(result.columns[0])
+
+		vol = get_volume_stats(result)
+		std, pct_change = get_price_data(result)
+		return vol, std, pct_change
+
+	__histories(timeframe)
+	return None
 
 
-def get_price_volatility_history(timeframe):
+def get_price_volatility_history(stock_ticker, current_datetime, timeframe, connection):
 	return None
 
 
