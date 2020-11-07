@@ -41,7 +41,7 @@ def __lookup_connection(stock_ticker, sql_diff, datetime_, connection):
 	return result
 
 
-def get_price_history(stock_ticker, current_datetime, timeframe, connection):
+def get_price_history(stock_ticker, current_datetime, connection):
 	"""returns the historical stock data for the selected time period to do further analysis on including volatility,
 	volume, price trends, etc """
 
@@ -55,13 +55,15 @@ def get_price_history(stock_ticker, current_datetime, timeframe, connection):
 	# c) else:
 	#   - add whatever we can find from yfinance
 
-	# timeframes = ['']
+	timeframes = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y']
+
 	def __histories(timeframe):
 		def get_volume_stats(df):
 			"""compute volume standard deviation"""
 			key = df.columns[-1]  # should be the "Volume" column
 			std = np.std(df[key])
-			return std
+			med = np.mean(df[key])
+			return std, med
 
 		def get_price_data(df):
 			"""compute log return, standard deviation of adj close
@@ -69,11 +71,12 @@ def get_price_history(stock_ticker, current_datetime, timeframe, connection):
 			key = df.columns[0]  # should be the "Adj Close" column
 			std = np.std(df[key])
 
-			# Compute pct_change
+			# Compute _pct_change
 			start = df[key].head(1).values
 			end = df[key].tail(1).values
 			pct_change = np.log(end / start)
-			return std, pct_change
+			mean = np.mean(df[key])
+			return std, pct_change, mean
 
 		# ----------------
 		# DATE HANDLING
@@ -131,29 +134,24 @@ def get_price_history(stock_ticker, current_datetime, timeframe, connection):
 
 		# -----------------
 		# ACTUAL CALL
-		sql_ = f"SELECT {dt_name}, {col_names} from" \
-		       f" {table} where {dt_name} > '{start_date}' AND {dt_name} < '{current_datetime}' "
+		sql_ = f"SELECT {dt_name}, {col_names} from {table} where {dt_name} > '{start_date - timedelta(days=1)}' " \
+		       f"AND {dt_name} < '{current_datetime + timedelta(days=1)}' "
 		result = pd.read_sql(sql=sql_, con=connection)
 		result = result.set_index(result.columns[0])
 
-		vol = get_volume_stats(result)
-		std, pct_change = get_price_data(result)
-		return vol, std, pct_change
+		_volume, _vol_mean = get_volume_stats(result)
+		_price_std, _price_pct_change, _price_mean = get_price_data(result)
+		return _volume, _vol_mean, _price_std, _price_pct_change, _price_mean
 
-	__histories(timeframe)
-	return None
-
-
-def get_price_volatility_history(stock_ticker, current_datetime, timeframe, connection):
-	return None
-
-
-def get_volume_volatility_history(timeframe):
-	return None
-
-
-def get_volatility_func():
-	return None
+	out_series = {}
+	for tf in timeframes:
+		volume, vol_mean, price_std, price_pct_change, price_mean = __histories(tf)
+		out_series[tf + '_' + 'vol'] = volume
+		out_series[tf + '_' + 'vol_mean'] = vol_mean
+		out_series[tf + '_' + 'price_std'] = price_std
+		out_series[tf + '_' + 'price_pct_change'] = price_std
+		out_series[tf + '_' + 'price_mean'] = price_mean
+	return out_series
 
 
 def get_dividends():
