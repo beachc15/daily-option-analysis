@@ -1,8 +1,24 @@
 import pandas as pd
-import pyodbc
 from datetime import date, timedelta, datetime
-import yfinance as yf
 import numpy as np
+from tqdm import tqdm
+
+
+def parse_df(_df, engine):
+	"""receive a series containing tickers as the value and DT as the index and returns the same series with associated statistics"""
+	for i in tqdm(range(len(_df))):
+		operation = _df.iloc[[i]]
+		dt = operation.index[0]
+		ticker = operation.values[0][0]
+		cur_price, cur_volume = get_currents(dt, ticker, engine)
+		x = get_price_history(ticker, dt, engine)
+	return cur_price, cur_volume, x
+
+
+def get_currents(_dt, ticker, engine):
+	price = get_current_price(_dt, ticker, engine)
+	volume = get_current_volume(_dt, ticker, engine)
+	return price, volume
 
 
 def get_current_price(datetime_, stock_ticker, connection):
@@ -14,6 +30,8 @@ def get_current_price(datetime_, stock_ticker, connection):
 	:returns adj_close_price:"""
 	sql_diff = 'Adj Close'
 	adj_close_price = __lookup_connection(stock_ticker, sql_diff, datetime_, connection)
+	# TODO why am I getting none value for anything over 70% regardless of time frame
+	print(adj_close_price)
 	return adj_close_price
 
 
@@ -61,23 +79,30 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		def get_volume_stats(df):
 			"""compute volume standard deviation"""
 			key = df.columns[-1]  # should be the "Volume" column
-			std = np.std(df[key])
-			med = np.mean(df[key])
+			working = df[key]
+			working = working.astype('float64')
+			working.index = working.index.astype('datetime64[ns]')
+			std = np.std(working.values)
+			med = np.mean(working.values)
+
 			return std, med
 
 		def get_price_data(df):
 			"""compute log return, standard deviation of adj close
 			:returns standard deviation, Percent change"""
 			key = df.columns[0]  # should be the "Adj Close" column
-			std = np.std(df[key])
+			working = df[key].astype('float64')
+			std = np.std(working)
 
 			# Compute _pct_change
-			start = df[key].head(1).values
-			end = df[key].tail(1).values
+			start = working.head(1).values
+			end = working.tail(1).values
 			pct_change = np.log(end / start)
-			mean = np.mean(df[key])
+			mean = np.mean(working)
 			return std, pct_change, mean
 
+		divide_time_factor = 6.5 * 6    # used to divide the volume of the short day records to normalize the data
+										# 6.5 hours with 6, 10 minute intervals per hour
 		# ----------------
 		# DATE HANDLING
 		# Determine time delta to pass into my SQL lookup function
@@ -111,14 +136,15 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		elif start_date.weekday() == 6:  # sunday
 			start_date = start_date + timedelta(days=1)
 
-		cutoff_dt = date(year=2020, month=6, day=26)  # This is the first date that is recorded w/ minute data
-		if cutoff_dt > start_date:
+		cutoff_dt = datetime(year=2020, month=6, day=26)  # This is the first date that is recorded w/ minute data
+		if cutoff_dt > start_date or (start_date.to_pydatetime() - cutoff_dt) < timedelta(days=10):
 			# do not run if the start date is less than the first day we have in the by-the-minute data
 			table = "schema_name2.historical_prices_by_day"
 			dt_name = "myDate"
 		else:
 			table = "schema_name2.all_prices_to_sql"
 			dt_name = "myDateTime"
+			divide_time_factor = 1          # if the time period is every 10 minutes then change the factor to one
 
 		# ------------------
 		# COLUMN NAME HANDLING
@@ -139,9 +165,13 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		result = pd.read_sql(sql=sql_, con=connection)
 		result = result.set_index(result.columns[0])
 
-		_volume, _vol_mean = get_volume_stats(result)
+		_volume_stddev, _vol_mean = get_volume_stats(result)
 		_price_std, _price_pct_change, _price_mean = get_price_data(result)
-		return _volume, _vol_mean, _price_std, _price_pct_change, _price_mean
+
+		# Normalize data with respect to the binomial time options
+		_volume_stddev = _volume_stddev / divide_time_factor
+		_vol_mean = _vol_mean / divide_time_factor
+		return _volume_stddev, _vol_mean, _price_std, _price_pct_change, _price_mean
 
 	out_series = {}
 	for tf in timeframes:
