@@ -1,22 +1,41 @@
 import pandas as pd
-from datetime import date, timedelta, datetime
+from datetime import timedelta, datetime, time
 import numpy as np
 from tqdm import tqdm
 
 
 def parse_df(_df, engine):
-	"""receive a series containing tickers as the value and DT as the index and returns the same series with associated statistics"""
+	"""receive a series containing tickers as the value and DT as the index and returns the same series with
+	associated statistics """
+	out_dict = {}
 	for i in tqdm(range(len(_df))):
 		operation = _df.iloc[[i]]
 		dt = operation.index[0]
 		ticker = operation.values[0][0]
 		cur_price, cur_volume = get_currents(dt, ticker, engine)
-		x = get_price_history(ticker, dt, engine)
-	return cur_price, cur_volume, x
+		if cur_price is KeyError:
+			pass
+		else:
+			time_stats = get_price_history(ticker, dt, engine)
+			local_out_dict = {
+				'currentPrice': cur_price,
+				'currentVolume': cur_volume,
+				'myDateTimeDirty': operation['myDateTimeDirty'][operation.index[0]]
+			}
+			for stat in time_stats:
+				local_out_dict[stat] = time_stats[stat]
+			entry_name = (dt, ticker)
+			out_dict[entry_name] = local_out_dict
+		# TODO build a cache that stores time relative ticker data and when a new arg is passed through checks that
+		#  cache first
+	return out_dict
 
 
 def get_currents(_dt, ticker, engine):
-	price = get_current_price(_dt, ticker, engine)
+	try:
+		price = get_current_price(_dt, ticker, engine)
+	except KeyError:
+		return KeyError
 	volume = get_current_volume(_dt, ticker, engine)
 	return price, volume
 
@@ -30,9 +49,10 @@ def get_current_price(datetime_, stock_ticker, connection):
 	:returns adj_close_price:"""
 	sql_diff = 'Adj Close'
 	adj_close_price = __lookup_connection(stock_ticker, sql_diff, datetime_, connection)
-	# TODO why am I getting none value for anything over 70% regardless of time frame
-	print(adj_close_price)
-	return adj_close_price
+	if adj_close_price is None:
+		return KeyError
+	else:
+		return adj_close_price
 
 
 def get_current_volume(datetime_, stock_ticker, connection):
@@ -97,12 +117,12 @@ def get_price_history(stock_ticker, current_datetime, connection):
 			# Compute _pct_change
 			start = working.head(1).values
 			end = working.tail(1).values
-			pct_change = np.log(end / start)
+			pct_change = np.log(end / start)[0]
 			mean = np.mean(working)
 			return std, pct_change, mean
 
-		divide_time_factor = 6.5 * 6    # used to divide the volume of the short day records to normalize the data
-										# 6.5 hours with 6, 10 minute intervals per hour
+		divide_time_factor = 6.5 * 6  # used to divide the volume of the short day records to normalize the data
+		# 6.5 hours with 6, 10 minute intervals per hour
 		# ----------------
 		# DATE HANDLING
 		# Determine time delta to pass into my SQL lookup function
@@ -144,7 +164,7 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		else:
 			table = "schema_name2.all_prices_to_sql"
 			dt_name = "myDateTime"
-			divide_time_factor = 1          # if the time period is every 10 minutes then change the factor to one
+			divide_time_factor = 1  # if the time period is every 10 minutes then change the factor to one
 
 		# ------------------
 		# COLUMN NAME HANDLING
@@ -160,6 +180,10 @@ def get_price_history(stock_ticker, current_datetime, connection):
 
 		# -----------------
 		# ACTUAL CALL
+		# *********
+		# TODO remove pandas usage for speedup
+		# *********
+
 		sql_ = f"SELECT {dt_name}, {col_names} from {table} where {dt_name} > '{start_date - timedelta(days=1)}' " \
 		       f"AND {dt_name} < '{current_datetime + timedelta(days=1)}' "
 		result = pd.read_sql(sql=sql_, con=connection)
@@ -179,18 +203,43 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		out_series[tf + '_' + 'vol'] = volume
 		out_series[tf + '_' + 'vol_mean'] = vol_mean
 		out_series[tf + '_' + 'price_std'] = price_std
-		out_series[tf + '_' + 'price_pct_change'] = price_std
+		out_series[tf + '_' + 'price_pct_change'] = price_pct_change
 		out_series[tf + '_' + 'price_mean'] = price_mean
 	return out_series
 
+def time_to_strike_df(df):
+	"""very specialized: do not use"""
+	cache = {}
+	def time_to_strike(expiration_dt, current_dt):
+		"""returns the amount of time left until expiration as a fraction of a year (365 days)"""
+		if (expiration_dt, current_dt) not in cache:
+			time_delta = datetime.combine(expiration_dt, time(hour=10)) - current_dt
+			seconds = time_delta.seconds
+			seconds_as_part_of_day = seconds / 86400
+			time_delta_float = round((float(time_delta.days) + seconds_as_part_of_day) / 365,6)
+			cache[(expiration_dt, current_dt)] = time_delta_float
+		else:
+			time_delta_float = cache[(expiration_dt, current_dt)]
+		return time_delta_float
+	df['timeUntilExpiration'] = df.apply(lambda x: time_to_strike(x['expiration'], x['myDateTime']), axis=1)
+	return df
+
+
+def price_delta_in_pct(strike, current_price):
+	"""finds the percent change necessary from current price to reach strike price"""
+	pct_change = round((strike - current_price) / current_price, 6)
+	return round(pct_change, 6)
+
 
 def get_dividends():
+	# TODO implement dividends
+	# manually annualize and make a table with the data that we load into memory because it would be tiny?
 	return None
 
 # def get_beta(beta_cache, ticker, date_):
 # 	#might get rid of the date for now
 # 	# DO NOT USE FEATURE
-# 	#       Want to replace with a time respective function taht calculates beta based on prev. financials
+# 	#       Want to replace with a time respective function that calculates beta based on prev. financials
 # 	lookup_tuple = (str(ticker).upper(), date_)
 # 	if lookup_tuple in beta_cache:
 # 		r = (beta_cache[lookup_tuple])
