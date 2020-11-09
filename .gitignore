@@ -1,5 +1,6 @@
 venv
 /.idea
+__pycache__
 /priceAnalysis/old_prices.csv
 /priceAnalysis/old_tickers.csv
 all_prices.json
