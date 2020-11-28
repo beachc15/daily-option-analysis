@@ -1,8 +1,10 @@
 import pymongo
 import json
 from bson.json_util import dumps
+from get_key_from_json import get_key
 
-client = pymongo.MongoClient("mongodb+srv://admin1:admin@cluster0.fm12j.mongodb.net/<dbname>?retryWrites=true&w=majority")
+
+client = pymongo.MongoClient(get_key())
 db = client.misc
 collection = (db['End of Day Prices'])
 cursor = collection.find({})

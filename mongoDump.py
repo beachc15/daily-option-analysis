@@ -1,10 +1,11 @@
 import pymongo
-import sys
 from bson.json_util import dumps, RELAXED_JSON_OPTIONS
 from tqdm import tqdm
+from get_key_from_json import get_key
 
-client = pymongo.MongoClient(
-	"mongodb+srv://admin1:admin@cluster0.fm12j.mongodb.net/<dbname>?retryWrites=true&w=majority")
+mongo_api_key = get_key()
+
+client = pymongo.MongoClient(mongo_api_key)
 db = client.data
 print(db.name)
 count = 0
@@ -31,4 +32,4 @@ for month in tqdm(range(0, 13)):
 	for date in range(32):
 		collection = (db[f'{month}_{date}_2020'])
 		collection.drop()
-print(f'succesfully dropped \'{db.name}\' database ')
+print(f'successfully dropped \'{db.name}\' database ')

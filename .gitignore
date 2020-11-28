@@ -4,3 +4,4 @@ __pycache__
 /priceAnalysis/old_prices.csv
 /priceAnalysis/old_tickers.csv
 all_prices.json
+my_api_key.json

@@ -4,6 +4,7 @@ from tqdm import tqdm
 import os, glob
 import re
 
+
 def parse_symbol(sym, opt):
 	''' Takes the contract symbol and deconstructs it to find strike price'''
 	if opt == 'call':
@@ -11,10 +12,7 @@ def parse_symbol(sym, opt):
 	else:
 		split = 'P'
 	y = sym.split(split)
-	return float(int(y[-1])/1000)
-
-
-
+	return float(int(y[-1]) / 1000)
 
 
 path = 'C:/DATA/option_history_repo/data'
@@ -23,7 +21,6 @@ option_types = ['call', 'put']
 big_df = []
 filenames = []
 with open('C:/DATA/option_history_repo/data/all.csv', 'w') as out_csv:
-
 	for filename in glob.glob(os.path.join(path, '*.json')):
 		with open(filename, 'r') as f:
 			filenames.append(filename)

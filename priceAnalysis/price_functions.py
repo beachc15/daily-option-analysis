@@ -26,8 +26,8 @@ def parse_df(_df, engine):
 				local_out_dict[stat] = time_stats[stat]
 			entry_name = (dt, ticker)
 			out_dict[entry_name] = local_out_dict
-		# TODO build a cache that stores time relative ticker data and when a new arg is passed through checks that
-		#  cache first
+	# TODO build a cache that stores time relative ticker data and when a new arg is passed through checks that
+	#  cache first
 	return out_dict
 
 
@@ -207,20 +207,23 @@ def get_price_history(stock_ticker, current_datetime, connection):
 		out_series[tf + '_' + 'price_mean'] = price_mean
 	return out_series
 
+
 def time_to_strike_df(df):
 	"""very specialized: do not use"""
 	cache = {}
+
 	def time_to_strike(expiration_dt, current_dt):
 		"""returns the amount of time left until expiration as a fraction of a year (365 days)"""
 		if (expiration_dt, current_dt) not in cache:
 			time_delta = datetime.combine(expiration_dt, time(hour=10)) - current_dt
 			seconds = time_delta.seconds
 			seconds_as_part_of_day = seconds / 86400
-			time_delta_float = round((float(time_delta.days) + seconds_as_part_of_day) / 365,6)
+			time_delta_float = round((float(time_delta.days) + seconds_as_part_of_day) / 365, 6)
 			cache[(expiration_dt, current_dt)] = time_delta_float
 		else:
 			time_delta_float = cache[(expiration_dt, current_dt)]
 		return time_delta_float
+
 	df['timeUntilExpiration'] = df.apply(lambda x: time_to_strike(x['expiration'], x['myDateTime']), axis=1)
 	return df
 
