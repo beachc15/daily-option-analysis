@@ -18,3 +18,7 @@ doesn't really work well with the quick indexing I will need for data processing
  - 11/10/2020
     - Decided to move data to kaggle in a .csv format. This could free my computer from having to host a sql database 
     (as fun as thats been! /s)
+    
+ # To-Do
+ - Make sure that price does not play a role. I want this model to predict option price based on every other factor other than what stock symbol the option is for. Have the stock symbol merely be a multiplier. 
+ - The goal is to make sure this model isn't overfit to the data. It's easy to randomly pull a selection from a certain regime of volatility but I want this to hold up outside of this regime.
