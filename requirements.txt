@@ -17,7 +17,7 @@ requests==2.24.0
 scipy==1.5.4
 six==1.15.0
 sympy==1.6.2
-urllib3==1.25.11
+urllib3==1.26.5
 yfinance==0.1.55
 tqdm~=4.51.0
 pyodbc~=4.0.30
